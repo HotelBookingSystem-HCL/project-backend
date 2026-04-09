@@ -62,7 +62,10 @@ builder.Services.AddSwaggerGen(options =>
 // Register Entity Framework with MySQL (Pomelo provider)
 // Connection string comes from appsettings.json
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseInMemoryDatabase("HotelDb"));
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
+    ));
 
 // ─── JWT Configuration ────────────────────────────────────────
 // Read JWT settings from appsettings.json and register as a singleton
@@ -128,11 +131,7 @@ var app = builder.Build();
 
 // ─── Auto-apply migrations on startup ────────────────────────
 // This creates/updates the database tables automatically
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
+
 
 // ─── Middleware Pipeline (ORDER MATTERS!) ─────────────────────
 

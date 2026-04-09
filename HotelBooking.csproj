@@ -7,32 +7,25 @@
 		<RootNamespace>HotelBooking</RootNamespace>
 	</PropertyGroup>
 
+
+
+
 	<ItemGroup>
-		<!-- EF Core (MATCHED VERSIONS) -->
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0">
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
 
-		<!-- 🔥 TEMP: USE IN-MEMORY (REMOVE MYSQL FOR NOW) -->
-		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
+		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
 
-		<!-- JWT -->
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.4.0" />
 
-		<!-- Logging -->
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+
 		<PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
 		<PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
 		<PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
 
-		<!-- Swagger -->
-		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
-
-		<!-- BCrypt -->
 		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 	</ItemGroup>
 
