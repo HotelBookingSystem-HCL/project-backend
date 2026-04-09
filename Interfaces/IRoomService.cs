@@ -1,12 +1,16 @@
-﻿using HotelBooking.Models;
+﻿// Interfaces/IRoomService.cs
+
+using HotelBooking.DTOs;
 
 namespace HotelBooking.Interfaces
 {
     public interface IRoomService
     {
-        Task<List<Room>> GetAll();
-        Task<Room> Add(Room room);
-        Task<List<Room>> Search(string? location, decimal? minPrice, decimal? maxPrice);
+        Task<IEnumerable<RoomResponseDto>> GetRoomsByHotelAsync(int hotelId);
+        Task<RoomResponseDto?> GetRoomByIdAsync(int id);
+        Task<IEnumerable<RoomResponseDto>> SearchAvailableRoomsAsync(RoomSearchDto searchDto);
+        Task<RoomResponseDto> CreateRoomAsync(int hotelId, RoomDto roomDto);
+        Task<RoomResponseDto?> UpdateRoomAsync(int id, RoomDto roomDto);
+        Task<bool> DeleteRoomAsync(int id);
     }
 }
-

@@ -1,57 +1,81 @@
-﻿namespace HotelBooking.Services;
+﻿// Services/AuthService.cs
+// Handles user registration and login logic
 
-using HotelBooking.Data;
-using HotelBooking.Dto.Auth;
+using HotelBooking.DTOs;
 using HotelBooking.Helpers;
 using HotelBooking.Interfaces;
 using HotelBooking.Models;
-using Microsoft.EntityFrameworkCore;
-using Serilog;
 
-public class AuthService : IAuthService
+namespace HotelBooking.Services
 {
-    private readonly AppDbContext _db;
-    private readonly JwtHelper _jwt;
-
-    public AuthService(AppDbContext db, JwtHelper jwt)
+    public class AuthService : IAuthService
     {
-        _db = db;
-        _jwt = jwt;
-    }
+        private readonly IUserRepository _userRepository;
+        private readonly JwtHelper _jwtHelper;
 
-    public async Task<string> Register(RegisterDto dto)
-    {
-        if (await _db.Users.AnyAsync(x => x.Username == dto.Username))
-            throw new Exception("Username already exists");
-
-        var user = new User
+        public AuthService(IUserRepository userRepository, JwtHelper jwtHelper)
         {
-            Username = dto.Username,
-            PasswordHash = PasswordHasher.Hash(dto.Password),
-            Role = "User"
-        };
-
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-
-        Log.Information("User registered: {Username}", user.Username);
-
-        return _jwt.GenerateToken(user);
-    }
-
-    public async Task<string> Login(LoginDto dto)
-    {
-        var user = await _db.Users
-            .FirstOrDefaultAsync(x => x.Username == dto.Username);
-
-        if (user == null || !PasswordHasher.Verify(dto.Password, user.PasswordHash))
-        {
-            Log.Warning("Invalid login attempt");
-            throw new Exception("Invalid credentials");
+            _userRepository = userRepository;
+            _jwtHelper = jwtHelper;
         }
 
-        Log.Information("User logged in: {Username}", user.Username);
+        public async Task<AuthResponseDto?> LoginAsync(LoginDto loginDto)
+        {
+            // 1. Find user by email
+            var user = await _userRepository.GetByEmailAsync(loginDto.Email);
 
-        return _jwt.GenerateToken(user);
+            // 2. Check user exists and is active
+            if (user == null || !user.IsActive)
+                return null;
+
+            // 3. Verify password
+            if (!PasswordHasher.Verify(loginDto.Password, user.PasswordHash))
+                return null;
+
+            // 4. Generate JWT token
+            var token = _jwtHelper.GenerateToken(user);
+
+            return new AuthResponseDto
+            {
+                Token = token,
+                FullName = user.FullName,
+                Email = user.Email,
+                Role = user.Role,
+                UserId = user.Id
+            };
+        }
+
+        public async Task<AuthResponseDto?> RegisterAsync(RegisterDto registerDto)
+        {
+            // 1. Check if email already exists
+            if (await _userRepository.EmailExistsAsync(registerDto.Email))
+                return null; // Email taken
+
+            // 2. Create new user (always register as "User" role for security)
+            var newUser = new User
+            {
+                FullName = registerDto.FullName,
+                Email = registerDto.Email.ToLower().Trim(),
+                PasswordHash = PasswordHasher.Hash(registerDto.Password),
+                Role = "User", // New registrations are always "User"
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            };
+
+            // 3. Save to database
+            var savedUser = await _userRepository.AddAsync(newUser);
+
+            // 4. Generate token so user is auto-logged in after register
+            var token = _jwtHelper.GenerateToken(savedUser);
+
+            return new AuthResponseDto
+            {
+                Token = token,
+                FullName = savedUser.FullName,
+                Email = savedUser.Email,
+                Role = savedUser.Role,
+                UserId = savedUser.Id
+            };
+        }
     }
 }

@@ -1,53 +1,130 @@
-﻿using HotelBooking.Data;
+﻿// Services/RoomService.cs
+// Business logic for room operations
+
+using HotelBooking.DTOs;
 using HotelBooking.Interfaces;
 using HotelBooking.Models;
-using Microsoft.EntityFrameworkCore;
-using Serilog;
-namespace HotelBooking.Services;
-public class RoomService : IRoomService
+
+namespace HotelBooking.Services
 {
-    private readonly AppDbContext _db;
-
-    public RoomService(AppDbContext db)
+    public class RoomService : IRoomService
     {
-        _db = db;
-    }
+        private readonly IRoomRepository _roomRepository;
+        private readonly IHotelRepository _hotelRepository;
 
-    public async Task<List<Room>> GetAll()
-    {
-        return await _db.Rooms
-            .Include(r => r.Hotel)
-            .ToListAsync();
-    }
+        public RoomService(IRoomRepository roomRepository, IHotelRepository hotelRepository)
+        {
+            _roomRepository = roomRepository;
+            _hotelRepository = hotelRepository;
+        }
 
-    public async Task<Room> Add(Room room)
-    {
-        var hotelExists = await _db.Hotels.AnyAsync(h => h.Id == room.HotelId);
+        public async Task<IEnumerable<RoomResponseDto>> GetRoomsByHotelAsync(int hotelId)
+        {
+            var rooms = await _roomRepository.GetByHotelIdAsync(hotelId);
+            return rooms.Select(MapToResponseDto);
+        }
 
-        if (!hotelExists)
-            throw new Exception("Invalid Hotel ID");
+        public async Task<RoomResponseDto?> GetRoomByIdAsync(int id)
+        {
+            var room = await _roomRepository.GetByIdAsync(id);
+            return room == null ? null : MapToResponseDto(room);
+        }
 
-        _db.Rooms.Add(room);
-        await _db.SaveChangesAsync();
+        public async Task<IEnumerable<RoomResponseDto>> SearchAvailableRoomsAsync(RoomSearchDto searchDto)
+        {
+            var rooms = await _roomRepository.GetByHotelIdAsync(searchDto.HotelId);
 
-        Log.Information($"Room added: {room.Category}");
+            // Only show available rooms
+            var availableRooms = new List<Room>();
+            foreach (var room in rooms.Where(r => r.IsAvailable && r.IsActive))
+            {
+                // Check the dates are actually free
+                var isAvailable = await _roomRepository.IsRoomAvailableAsync(
+                    room.Id, searchDto.CheckInDate, searchDto.CheckOutDate);
 
-        return room;
-    }
+                if (isAvailable)
+                    availableRooms.Add(room);
+            }
 
-    public async Task<List<Room>> Search(string? location, decimal? minPrice, decimal? maxPrice)
-    {
-        var query = _db.Rooms.Include(r => r.Hotel).AsQueryable();
+            // Filter by number of guests
+            var filtered = availableRooms
+                .Where(r => r.MaxOccupancy >= searchDto.NumberOfGuests);
 
-        if (!string.IsNullOrEmpty(location))
-            query = query.Where(r => r.Hotel.Location.Contains(location));
+            // Filter by price
+            if (searchDto.MaxPricePerNight.HasValue)
+                filtered = filtered.Where(r => r.PricePerNight <= searchDto.MaxPricePerNight.Value);
 
-        if (minPrice.HasValue)
-            query = query.Where(r => r.Price >= minPrice);
+            // Filter by room type
+            if (!string.IsNullOrWhiteSpace(searchDto.RoomType))
+                filtered = filtered.Where(r =>
+                    r.RoomType.Equals(searchDto.RoomType, StringComparison.OrdinalIgnoreCase));
 
-        if (maxPrice.HasValue)
-            query = query.Where(r => r.Price <= maxPrice);
+            return filtered.Select(MapToResponseDto);
+        }
 
-        return await query.ToListAsync();
+        public async Task<RoomResponseDto> CreateRoomAsync(int hotelId, RoomDto roomDto)
+        {
+            var room = new Room
+            {
+                HotelId = hotelId,
+                RoomNumber = roomDto.RoomNumber,
+                RoomType = roomDto.RoomType,
+                Description = roomDto.Description,
+                PricePerNight = roomDto.PricePerNight,
+                MaxOccupancy = roomDto.MaxOccupancy,
+                Features = roomDto.Features,
+                ImageUrl = roomDto.ImageUrl,
+                IsAvailable = roomDto.IsAvailable,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var created = await _roomRepository.AddAsync(room);
+
+            // Reload with Hotel navigation property
+            var reloaded = await _roomRepository.GetByIdAsync(created.Id);
+            return MapToResponseDto(reloaded!);
+        }
+
+        public async Task<RoomResponseDto?> UpdateRoomAsync(int id, RoomDto roomDto)
+        {
+            var room = await _roomRepository.GetByIdAsync(id);
+            if (room == null) return null;
+
+            room.RoomNumber = roomDto.RoomNumber;
+            room.RoomType = roomDto.RoomType;
+            room.Description = roomDto.Description;
+            room.PricePerNight = roomDto.PricePerNight;
+            room.MaxOccupancy = roomDto.MaxOccupancy;
+            room.Features = roomDto.Features;
+            room.ImageUrl = roomDto.ImageUrl;
+            room.IsAvailable = roomDto.IsAvailable;
+
+            var updated = await _roomRepository.UpdateAsync(room);
+            return MapToResponseDto(updated);
+        }
+
+        public async Task<bool> DeleteRoomAsync(int id)
+        {
+            return await _roomRepository.DeleteAsync(id);
+        }
+
+        private static RoomResponseDto MapToResponseDto(Room room)
+        {
+            return new RoomResponseDto
+            {
+                Id = room.Id,
+                HotelId = room.HotelId,
+                HotelName = room.Hotel?.Name ?? "",
+                RoomNumber = room.RoomNumber,
+                RoomType = room.RoomType,
+                Description = room.Description,
+                PricePerNight = room.PricePerNight,
+                MaxOccupancy = room.MaxOccupancy,
+                Features = room.Features,
+                ImageUrl = room.ImageUrl,
+                IsAvailable = room.IsAvailable
+            };
+        }
     }
 }

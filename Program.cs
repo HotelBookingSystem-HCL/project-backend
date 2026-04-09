@@ -1,130 +1,168 @@
-﻿using HotelBooking.Congifurations;
+﻿// Program.cs
+// This is the entry point of the application.
+// We register all services, configure middleware, and set up the HTTP pipeline here.
+
+using HotelBooking.Configurations;
 using HotelBooking.Data;
 using HotelBooking.Helpers;
 using HotelBooking.Interfaces;
 using HotelBooking.Middleware;
+using HotelBooking.Repositories;
+using HotelBooking.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Serilog;
-using Serilog.Events;
+using Microsoft.OpenApi.Models;
 using System.Text;
-
-// ===================== SERILOG CONFIG =====================
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .WriteTo.File("Logs/log.txt", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog();
+// ─────────────────────────────────────────────────────────────
+// 1. ADD SERVICES TO THE DEPENDENCY INJECTION CONTAINER
+// ─────────────────────────────────────────────────────────────
 
-// ===================== CONFIGURATION =====================
+// Add controllers (enables our API endpoints)
+builder.Services.AddControllers();
 
-// DB Context
+// Add Swagger/OpenAPI (for testing the API in the browser)
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Hotel Booking API",
+        Version = "v1",
+        Description = "Full-Stack .NET Hotel Booking System - Case 3"
+    });
+
+    // Allow sending JWT token from Swagger UI
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT token here. Example: Bearer eyJhbGciOi..."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// ─── Database ───────────────────────────────────────────────
+// Register Entity Framework with MySQL (Pomelo provider)
+// Connection string comes from appsettings.json
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseInMemoryDatabase("HotelDb")); // Change to SQL Server later
+    options.UseInMemoryDatabase("HotelDb"));
 
-// JWT Settings
-builder.Services.Configure<JwtSettings>(
-    builder.Configuration.GetSection("JwtSettings"));
+// ─── JWT Configuration ────────────────────────────────────────
+// Read JWT settings from appsettings.json and register as a singleton
+var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()
+    ?? throw new Exception("JwtSettings not found in appsettings.json");
 
-// Email Settings
-builder.Services.Configure<EmailSettings>(
-    builder.Configuration.GetSection("EmailSettings"));
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddSingleton<JwtHelper>();
 
-// ===================== DEPENDENCY INJECTION =====================
-
-// Helpers
-builder.Services.AddScoped<JwtHelper>();
-builder.Services.AddScoped<IEmailService, EmailService>();
-
-// Services
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IHotelService, HotelService>();
-builder.Services.AddScoped<IRoomService, RoomService>();
-builder.Services.AddScoped<IBookingService, BookingService>();
-
-// ===================== AUTHENTICATION =====================
-var jwtSettings = builder.Configuration
-    .GetSection("JwtSettings")
-    .Get<JwtSettings>();
-
-builder.Services.AddAuthentication("Bearer")
-.AddJwtBearer("Bearer", options =>
+// Tell ASP.NET to use JWT Bearer tokens for authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
         ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-
+        ValidateLifetime = true,          // Token must not be expired
+        ValidateIssuerSigningKey = true,  // Token must be signed with our secret
         ValidIssuer = jwtSettings.Issuer,
         ValidAudience = jwtSettings.Audience,
-
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(jwtSettings.Key))
+            Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
     };
 });
 
-// ===================== AUTHORIZATION =====================
+// ─── Authorization Policies ──────────────────────────────────
 builder.Services.AddAuthorization();
 
-// ===================== CONTROLLERS =====================
-builder.Services.AddControllers();
+// ─── Repositories (Database Access Layer) ────────────────────
+// "AddScoped" = one instance per HTTP request (perfect for DB access)
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IHotelRepository, HotelRepository>();
+builder.Services.AddScoped<IRoomRepository, RoomRepository>();
+builder.Services.AddScoped<IBookingRepository, BookingRepository>();
 
-// ===================== SWAGGER =====================
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
+// ─── Services (Business Logic Layer) ─────────────────────────
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IHotelService, HotelService>();
+builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<IBookingService, BookingService>();
+
+// ─── CORS (Allow frontend to call this API) ──────────────────
+builder.Services.AddCors(options =>
 {
-    options.SwaggerDoc("v1", new() { Title = "Hotel Booking API", Version = "v1" });
-
-    // 🔐 Add JWT support in Swagger
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddPolicy("AllowAll", policy =>
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "Enter JWT Token"
-    });
-
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-    {
-        {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            new string[] {}
-        }
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
-// ===================== BUILD APP =====================
+// ─────────────────────────────────────────────────────────────
+// 2. BUILD THE APP AND CONFIGURE THE HTTP PIPELINE
+// ─────────────────────────────────────────────────────────────
+
 var app = builder.Build();
 
-// ===================== MIDDLEWARE =====================
+// ─── Auto-apply migrations on startup ────────────────────────
+// This creates/updates the database tables automatically
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
+// ─── Middleware Pipeline (ORDER MATTERS!) ─────────────────────
+
+// 1. Our custom error handler - catches all exceptions globally
 app.UseMiddleware<ExceptionMiddleware>();
 
+// 2. Swagger UI - only in development
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hotel Booking API v1");
+        c.RoutePrefix = string.Empty; // Serve Swagger at root URL "/"
+    });
 }
 
+// 3. HTTPS redirect
 app.UseHttpsRedirection();
 
+// 4. CORS - must be before Auth
+app.UseCors("AllowAll");
+
+// 5. Authentication (Who are you?) - must come before Authorization
 app.UseAuthentication();
+
+// 6. Authorization (Are you allowed?) - must come after Authentication
 app.UseAuthorization();
 
+// 7. Map controller routes
 app.MapControllers();
 
-// ===================== RUN =====================
 app.Run();

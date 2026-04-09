@@ -1,41 +1,54 @@
-﻿using HotelBooking.Dto.Auth;
+﻿// Controllers/AuthController.cs
+// Handles user registration and login
+// No [Authorize] here - these endpoints are public (anyone can call them)
+
+using HotelBooking.DTOs;
+using HotelBooking.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
-namespace HotelBooking.Controllers;
-
-[ApiController]
-[Route("api/auth")]
-public class AuthController : ControllerBase
+namespace HotelBooking.Controllers
 {
-    private readonly IAuthService _service;
-
-    public AuthController(IAuthService service)
+    [ApiController]
+    [Route("api/[controller]")] // Route = api/auth
+    public class AuthController : ControllerBase
     {
-        _service = service;
-    }
+        private readonly IAuthService _authService;
 
-    [HttpPost("register")]
-    public async Task<IActionResult> Register(RegisterDto dto)
-    {
-        var token = await _service.Register(dto);
-
-        return Ok(new AuthResponseDto
+        public AuthController(IAuthService authService)
         {
-            Token = token,
-            Username = dto.Username,
-            Role = "User"
-        });
-    }
+            _authService = authService;
+        }
 
-    [HttpPost("login")]
-    public async Task<IActionResult> Login(LoginDto dto)
-    {
-        var token = await _service.Login(dto);
-
-        return Ok(new AuthResponseDto
+        // POST api/auth/register
+        // Body: { "fullName": "John", "email": "john@example.com", "password": "Pass@123" }
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterDto registerDto)
         {
-            Token = token,
-            Username = dto.Username
-        });
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _authService.RegisterAsync(registerDto);
+
+            if (result == null)
+                return BadRequest(new { Message = "Email is already registered." });
+
+            return Ok(result);
+        }
+
+        // POST api/auth/login
+        // Body: { "email": "john@example.com", "password": "Pass@123" }
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _authService.LoginAsync(loginDto);
+
+            if (result == null)
+                return Unauthorized(new { Message = "Invalid email or password." });
+
+            return Ok(result);
+        }
     }
 }

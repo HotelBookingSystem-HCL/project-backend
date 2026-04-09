@@ -1,42 +1,64 @@
-﻿using System.Net;
+﻿// Middleware/ExceptionMiddleware.cs
+// This middleware catches all unhandled exceptions and returns a clean JSON error response
+// Without this, .NET would return a raw 500 HTML error page which is bad for APIs
+
+using System.Net;
 using System.Text.Json;
-using Serilog;
 
-namespace HotelBooking.Middleware;
-
-public class ExceptionMiddleware
+namespace HotelBooking.Middleware
 {
-    private readonly RequestDelegate _next;
-
-    public ExceptionMiddleware(RequestDelegate next)
+    public class ExceptionMiddleware
     {
-        _next = next;
-    }
+        // _next represents the next piece of middleware in the pipeline
+        private readonly RequestDelegate _next;
+        private readonly ILogger<ExceptionMiddleware> _logger;
 
-    public async Task Invoke(HttpContext context)
-    {
-        try
+        public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
         {
-            // Pass request to next middleware
-            await _next(context);
+            _next = next;
+            _logger = logger;
         }
-        catch (Exception ex)
-        {
-            // Log error
-            Log.Error(ex, "Unhandled exception occurred");
 
-            // Prepare response
+        public async Task InvokeAsync(HttpContext context)
+        {
+            try
+            {
+                // Try to process the request normally
+                await _next(context);
+            }
+            catch (Exception ex)
+            {
+                // Log the full error for debugging
+                _logger.LogError(ex, "An unhandled exception occurred: {Message}", ex.Message);
+
+                // Return a clean JSON error to the client
+                await HandleExceptionAsync(context, ex);
+            }
+        }
+
+        private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+        {
+            // Choose HTTP status code based on exception type
+            var statusCode = exception switch
+            {
+                KeyNotFoundException => HttpStatusCode.NotFound,         // 404
+                UnauthorizedAccessException => HttpStatusCode.Forbidden, // 403
+                ArgumentException => HttpStatusCode.BadRequest,          // 400
+                InvalidOperationException => HttpStatusCode.BadRequest,  // 400
+                _ => HttpStatusCode.InternalServerError                  // 500
+            };
+
             context.Response.ContentType = "application/json";
-            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            context.Response.StatusCode = (int)statusCode;
 
             var response = new
             {
-                message = "Something went wrong",
-                error = ex.Message // remove in production if needed
+                StatusCode = (int)statusCode,
+                Message = exception.Message
             };
 
-            await context.Response.WriteAsync(
-                JsonSerializer.Serialize(response));
+            var json = JsonSerializer.Serialize(response);
+            return context.Response.WriteAsync(json);
         }
     }
 }
