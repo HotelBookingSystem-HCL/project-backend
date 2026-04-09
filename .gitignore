@@ -1,0 +1,8 @@
+#visual studio
+.vs/
+#Build folders
+bin/
+obj/
+#Angular
+node_modules/
+dist/
