@@ -115,14 +115,13 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 // ─── CORS (Allow frontend to call this API) ──────────────────
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowAngularLocalhost", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins("http://localhost:4200") // Angular dev server
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
 });
-
 // ─────────────────────────────────────────────────────────────
 // 2. BUILD THE APP AND CONFIGURE THE HTTP PIPELINE
 // ─────────────────────────────────────────────────────────────
@@ -153,7 +152,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 // 4. CORS - must be before Auth
-app.UseCors("AllowAll");
+app.UseCors("AllowAngularLocalhost");
 
 // 5. Authentication (Who are you?) - must come before Authorization
 app.UseAuthentication();
