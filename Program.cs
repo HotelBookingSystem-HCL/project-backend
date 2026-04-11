@@ -57,7 +57,12 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
+// ─── Email Service ────────────────────────────────────────────
+var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>()
+    ?? throw new Exception("EmailSettings not found in appsettings.json");
 
+builder.Services.AddSingleton(emailSettings);
+builder.Services.AddScoped<IEmailService, EmailService>();
 // ─── Database ───────────────────────────────────────────────
 // Register Entity Framework with MySQL (Pomelo provider)
 // Connection string comes from appsettings.json

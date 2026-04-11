@@ -1,6 +1,4 @@
-﻿// Services/BookingService.cs
-
-using HotelBooking.DTOs;
+﻿using HotelBooking.DTOs;
 using HotelBooking.Interfaces;
 using HotelBooking.Models;
 
@@ -10,11 +8,16 @@ namespace HotelBooking.Services
     {
         private readonly IBookingRepository _bookingRepository;
         private readonly IRoomRepository _roomRepository;
+        private readonly IEmailService _emailService;  // ADD THIS
 
-        public BookingService(IBookingRepository bookingRepository, IRoomRepository roomRepository)
+        public BookingService(
+            IBookingRepository bookingRepository,
+            IRoomRepository roomRepository,
+            IEmailService emailService)  // ADD THIS
         {
             _bookingRepository = bookingRepository;
             _roomRepository = roomRepository;
+            _emailService = emailService;  // ADD THIS
         }
 
         public async Task<BookingResponseDto> CreateBookingAsync(int userId, BookingDto bookingDto)
@@ -43,7 +46,6 @@ namespace HotelBooking.Services
             int nights = (bookingDto.CheckOutDate - bookingDto.CheckInDate).Days;
             decimal totalAmount = nights * room.PricePerNight;
 
-            // Apply promo codes
             decimal discountAmount = 0;
             if (!string.IsNullOrWhiteSpace(bookingDto.PromoCode))
             {
@@ -75,9 +77,28 @@ namespace HotelBooking.Services
 
             var created = await _bookingRepository.AddAsync(booking);
             var full = await _bookingRepository.GetByIdAsync(created.Id);
-            return MapToDto(full!);
+            var dto = MapToDto(full!);
+
+            // ─── Send confirmation email ──────────────────────────
+            // full.User is loaded by GetByIdAsync via .Include(b => b.User)
+            if (full?.User != null)
+            {
+                var userName = full.User.FullName ?? full.User.Email;
+                await _emailService.SendBookingConfirmationAsync(
+                    full.User.Email,
+                    userName,
+                    dto
+                );
+
+                // Mark email as sent
+                full.EmailSent = true;
+                await _bookingRepository.UpdateAsync(full);
+            }
+
+            return dto;
         }
 
+        // ── All other methods stay exactly the same ───────────────
         public async Task<BookingResponseDto?> GetBookingByIdAsync(int id)
         {
             var booking = await _bookingRepository.GetByIdAsync(id);
